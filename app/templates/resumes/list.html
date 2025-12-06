@@ -7,8 +7,8 @@
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
         <div>
-            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900">Resumes</h1>
-            <p class="text-gray-600">Manage your resume versions</p>
+            <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">Resumes</h1>
+            <p class="text-gray-600 dark:text-gray-400">Manage your resume versions</p>
         </div>
         <a href="/resumes/upload"
            class="inline-flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600 transition-colors">
@@ -21,35 +21,35 @@
     </div>
 
     {% if resumes %}
-    <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div class="divide-y">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
+        <div class="divide-y dark:divide-gray-700">
             {% for resume in resumes %}
-            <div class="p-4 hover:bg-gray-50 flex items-center justify-between">
+            <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between">
                 <div class="flex items-center space-x-4">
-                    <div class="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="flex-shrink-0 w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                         </svg>
                     </div>
                     <div>
                         <div class="flex items-center gap-2">
-                            <span class="font-medium text-gray-900">{{ resume.name }}</span>
+                            <span class="font-medium text-gray-900 dark:text-white">{{ resume.name }}</span>
                             {% if resume.is_default %}
-                            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Default</span>
+                            <span class="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 rounded-full">Default</span>
                             {% endif %}
                         </div>
-                        <div class="text-sm text-gray-500">
+                        <div class="text-sm text-gray-500 dark:text-gray-400">
                             {{ resume.filename }} · {{ resume_counts.get(resume.id, 0) }} applications
                         </div>
-                        <div class="text-xs text-gray-400">
+                        <div class="text-xs text-gray-400 dark:text-gray-500">
                             Uploaded {{ resume.created_at.strftime('%b %d, %Y') }}
                         </div>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
                     <a href="/resumes/{{ resume.id }}/download"
-                       class="p-2 text-gray-600 hover:text-primary hover:bg-gray-100 rounded-lg"
+                       class="p-2 text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg"
                        title="Download">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -59,7 +59,7 @@
                     {% if not resume.is_default %}
                     <form method="POST" action="/resumes/{{ resume.id }}/default" class="inline">
                         <button type="submit"
-                                class="p-2 text-gray-600 hover:text-green-600 hover:bg-gray-100 rounded-lg"
+                                class="p-2 text-gray-600 dark:text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg"
                                 title="Set as default">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -71,7 +71,7 @@
                     <form method="POST" action="/resumes/{{ resume.id }}/delete"
                           onsubmit="return confirm('Delete this resume?');" class="inline">
                         <button type="submit"
-                                class="p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-lg"
+                                class="p-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg"
                                 title="Delete">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -85,13 +85,13 @@
         </div>
     </div>
     {% else %}
-    <div class="bg-white rounded-xl shadow-sm border p-12 text-center">
-        <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-12 text-center">
+        <svg class="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
-        <h3 class="text-lg font-medium text-gray-900 mb-2">No resumes uploaded</h3>
-        <p class="text-gray-600 mb-6">Upload your resume to track which version you used for each application</p>
+        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">No resumes uploaded</h3>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">Upload your resume to track which version you used for each application</p>
         <a href="/resumes/upload"
            class="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-600">
             Upload Resume
