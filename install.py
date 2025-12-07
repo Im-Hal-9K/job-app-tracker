@@ -120,10 +120,11 @@ def install_dependencies():
     print_step("3", "Installing dependencies...")
     print()
     pip = get_pip_command()
+    python = get_python_command()
 
-    # Upgrade pip first (important for compatibility)
+    # Upgrade pip using python -m pip (avoids Windows locking issues)
     success, _ = run_with_progress(
-        [pip, "install", "--upgrade", "pip"],
+        [python, "-m", "pip", "install", "--upgrade", "pip"],
         "Upgrading pip to latest version"
     )
     if not success:
@@ -131,7 +132,7 @@ def install_dependencies():
 
     # Upgrade setuptools and wheel for better compatibility
     success, _ = run_with_progress(
-        [pip, "install", "--upgrade", "setuptools", "wheel"],
+        [python, "-m", "pip", "install", "--upgrade", "setuptools", "wheel"],
         "Upgrading setuptools and wheel"
     )
     if not success:
