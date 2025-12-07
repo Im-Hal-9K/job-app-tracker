@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 import enum
 
-from passlib.hash import bcrypt
+import bcrypt
 
 from app.database import Base
 
@@ -34,11 +34,15 @@ class User(Base):
 
     def set_password(self, password: str):
         """Hash and set password."""
-        self.password_hash = bcrypt.hash(password)
+        password_bytes = password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        self.password_hash = bcrypt.hashpw(password_bytes, salt).decode('utf-8')
 
     def verify_password(self, password: str) -> bool:
         """Verify password against hash."""
-        return bcrypt.verify(password, self.password_hash)
+        password_bytes = password.encode('utf-8')
+        hash_bytes = self.password_hash.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hash_bytes)
 
     def __repr__(self):
         return f"<User {self.username}>"

@@ -22,7 +22,7 @@ tenacity>=8.0
 python-dateutil>=2.8.2
 
 # Authentication
-passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
 itsdangerous>=2.1.0
 
 # Export/Reporting
