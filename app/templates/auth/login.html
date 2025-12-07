@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Job Tracker{% endblock %}
+
+{% block content %}
+<div class="min-h-[80vh] flex items-center justify-center">
+    <div class="w-full max-w-md">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700 p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Welcome Back</h1>
+                <p class="text-gray-600 dark:text-gray-400 mt-2">Sign in to your Job Tracker account</p>
+            </div>
+
+            {% if error %}
+            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+                <p class="text-red-700 dark:text-red-300 text-sm">
+                    {% if error == 'invalid' %}
+                        Invalid username or password.
+                    {% elif error == 'inactive' %}
+                        Your account has been deactivated.
+                    {% else %}
+                        An error occurred. Please try again.
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/auth/login" class="space-y-6">
+                <div>
+                    <label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Username or Email
+                    </label>
+                    <input type="text" id="username" name="username" required
+                           class="w-full px-4 py-3 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                           placeholder="Enter your username or email">
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Password
+                    </label>
+                    <input type="password" id="password" name="password" required
+                           class="w-full px-4 py-3 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                           placeholder="Enter your password">
+                </div>
+
+                <button type="submit"
+                        class="w-full px-4 py-3 bg-primary text-white rounded-lg hover:bg-blue-600 transition-colors font-medium">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-gray-600 dark:text-gray-400">
+                    Don't have an account?
+                    <a href="/auth/register" class="text-primary hover:underline font-medium">Create one</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

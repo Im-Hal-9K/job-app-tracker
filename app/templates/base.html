@@ -140,6 +140,33 @@
                     Add Application
                 </a>
             </div>
+
+            <!-- User section -->
+            {% if user %}
+            <div class="p-4 border-t dark:border-gray-700">
+                <div class="flex items-center mb-3">
+                    <div class="w-10 h-10 rounded-full bg-primary/20 dark:bg-primary/30 flex items-center justify-center text-primary font-bold">
+                        {{ user.display_name[0]|upper if user.display_name else user.username[0]|upper }}
+                    </div>
+                    <div class="ml-3 flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {{ user.display_name or user.username }}
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {{ user.email }}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <a href="/auth/profile" class="flex-1 px-3 py-2 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        Profile
+                    </a>
+                    <a href="/auth/logout" class="flex-1 px-3 py-2 text-sm text-center text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        Logout
+                    </a>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </aside>
 

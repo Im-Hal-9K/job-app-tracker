@@ -1,15 +1,18 @@
 """Main FastAPI application."""
 
 import logging
-from fastapi import FastAPI, Request
+from datetime import datetime
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.database import init_db, get_db, SessionLocal
-from app.models import Application, ApplicationStatus, Notification, Interview, AppSettings
-from app.routers import applications, resumes, sync, interviews, notifications, export, followups
+from app.models import Application, ApplicationStatus, Notification, Interview, AppSettings, User
+from app.routers import applications, resumes, sync, interviews, notifications, export, followups, auth
+from app.routers.auth import get_user_from_session
 
 # Configure logging
 logging.basicConfig(
@@ -21,7 +24,7 @@ logging.basicConfig(
 app = FastAPI(
     title="Job Tracker",
     description="Personal job application tracking system",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Mount static files
@@ -30,7 +33,22 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="app/templates")
 
+
+# Middleware to add user to all template contexts
+@app.middleware("http")
+async def add_user_to_request(request: Request, call_next):
+    """Add current user to request state for templates."""
+    db = SessionLocal()
+    try:
+        request.state.user = get_user_from_session(request, db)
+    finally:
+        db.close()
+    response = await call_next(request)
+    return response
+
+
 # Include routers
+app.include_router(auth.router)
 app.include_router(applications.router)
 app.include_router(resumes.router)
 app.include_router(sync.router)
@@ -47,73 +65,81 @@ async def startup():
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, db: Session = Depends(get_db)):
     """Main dashboard with overview stats."""
-    db = SessionLocal()
-    try:
-        # Get counts by status
-        status_counts = {}
-        for status in ApplicationStatus:
-            count = db.query(func.count(Application.id)).filter(
-                Application.status == status
-            ).scalar()
-            status_counts[status.value] = count
+    # Get current user
+    user = getattr(request.state, 'user', None)
 
-        total = sum(status_counts.values())
+    # Redirect to login if not authenticated
+    if not user:
+        return RedirectResponse(url="/auth/login", status_code=303)
 
-        # Get recent applications
-        recent = db.query(Application).order_by(
-            Application.last_updated.desc()
-        ).limit(5).all()
+    # Base query filtered by user
+    user_apps = db.query(Application).filter(Application.user_id == user.id)
 
-        # Get recent status changes
-        from app.models import StatusChange
-        recent_changes = db.query(StatusChange).order_by(
-            StatusChange.changed_at.desc()
-        ).limit(10).all()
+    # Get counts by status
+    status_counts = {}
+    for status in ApplicationStatus:
+        count = user_apps.filter(Application.status == status).count()
+        status_counts[status.value] = count
 
-        # Calculate response rate
-        responded = status_counts.get('declined', 0) + status_counts.get('interviewing', 0) + \
-                   status_counts.get('screening', 0) + status_counts.get('offer', 0) + \
-                   status_counts.get('accepted', 0)
-        response_rate = (responded / total * 100) if total > 0 else 0
+    total = sum(status_counts.values())
 
-        # Interview rate
-        interviewed = status_counts.get('interviewing', 0) + status_counts.get('offer', 0) + \
-                      status_counts.get('accepted', 0)
-        interview_rate = (interviewed / total * 100) if total > 0 else 0
+    # Get recent applications
+    recent = user_apps.order_by(
+        Application.last_updated.desc()
+    ).limit(5).all()
 
-        # Notification count
-        from datetime import datetime
-        unread_notifications = db.query(func.count(Notification.id)).filter(
-            Notification.is_read == False
-        ).scalar()
+    # Get recent status changes
+    from app.models import StatusChange
+    recent_changes = db.query(StatusChange).join(Application).filter(
+        Application.user_id == user.id
+    ).order_by(StatusChange.changed_at.desc()).limit(10).all()
 
-        # Upcoming interviews
-        upcoming_interviews = db.query(Interview).filter(
-            Interview.scheduled_at >= datetime.utcnow()
-        ).order_by(Interview.scheduled_at.asc()).limit(3).all()
+    # Calculate response rate
+    responded = status_counts.get('declined', 0) + status_counts.get('interviewing', 0) + \
+               status_counts.get('screening', 0) + status_counts.get('offer', 0) + \
+               status_counts.get('accepted', 0)
+    response_rate = (responded / total * 100) if total > 0 else 0
 
-        # Check if setup is complete
-        setup_complete = db.query(AppSettings).filter(
-            AppSettings.key == "setup_complete"
-        ).first()
+    # Interview rate
+    interviewed = status_counts.get('interviewing', 0) + status_counts.get('offer', 0) + \
+                  status_counts.get('accepted', 0)
+    interview_rate = (interviewed / total * 100) if total > 0 else 0
 
-        return templates.TemplateResponse("dashboard.html", {
-            "request": request,
-            "status_counts": status_counts,
-            "total": total,
-            "recent": recent,
-            "recent_changes": recent_changes,
-            "response_rate": response_rate,
-            "interview_rate": interview_rate,
-            "statuses": ApplicationStatus,
-            "unread_notifications": unread_notifications,
-            "upcoming_interviews": upcoming_interviews,
-            "show_setup_wizard": not setup_complete
-        })
-    finally:
-        db.close()
+    # Notification count (for this user's applications)
+    unread_notifications = db.query(func.count(Notification.id)).join(
+        Application, Notification.application_id == Application.id
+    ).filter(
+        Application.user_id == user.id,
+        Notification.is_read == False
+    ).scalar() or 0
+
+    # Upcoming interviews
+    upcoming_interviews = db.query(Interview).join(Application).filter(
+        Application.user_id == user.id,
+        Interview.scheduled_at >= datetime.utcnow()
+    ).order_by(Interview.scheduled_at.asc()).limit(3).all()
+
+    # Check if setup is complete
+    setup_complete = db.query(AppSettings).filter(
+        AppSettings.key == "setup_complete"
+    ).first()
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": user,
+        "status_counts": status_counts,
+        "total": total,
+        "recent": recent,
+        "recent_changes": recent_changes,
+        "response_rate": response_rate,
+        "interview_rate": interview_rate,
+        "statuses": ApplicationStatus,
+        "unread_notifications": unread_notifications,
+        "upcoming_interviews": upcoming_interviews,
+        "show_setup_wizard": not setup_complete
+    })
 
 
 @app.get("/health")

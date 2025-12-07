@@ -5,7 +5,43 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 import enum
 
+from passlib.hash import bcrypt
+
 from app.database import Base
+
+
+class User(Base):
+    """User account for multi-user support."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    display_name = Column(String(100), default="")
+
+    # Account status
+    is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+
+    # Relationships
+    applications = relationship("Application", back_populates="user")
+    resumes = relationship("Resume", back_populates="user")
+
+    def set_password(self, password: str):
+        """Hash and set password."""
+        self.password_hash = bcrypt.hash(password)
+
+    def verify_password(self, password: str) -> bool:
+        """Verify password against hash."""
+        return bcrypt.verify(password, self.password_hash)
+
+    def __repr__(self):
+        return f"<User {self.username}>"
 
 
 class ApplicationStatus(enum.Enum):
@@ -25,6 +61,7 @@ class Application(Base):
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     # Core job info
     company = Column(String(255), nullable=False, index=True)
@@ -61,6 +98,9 @@ class Application(Base):
     # Contacts at company
     contacts = relationship("Contact", back_populates="application")
 
+    # User relationship
+    user = relationship("User", back_populates="applications")
+
     def __repr__(self):
         return f"<Application {self.company} - {self.job_title}>"
 
@@ -86,6 +126,7 @@ class Resume(Base):
     __tablename__ = "resumes"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)  # e.g., "Software Engineer Resume"
     filename = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
@@ -95,6 +136,7 @@ class Resume(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     applications = relationship("Application", back_populates="resume")
+    user = relationship("User", back_populates="resumes")
 
     def __repr__(self):
         return f"<Resume {self.name}>"

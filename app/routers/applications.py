@@ -15,6 +15,14 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_applications(
     request: Request,
@@ -24,7 +32,10 @@ async def list_applications(
     sort: str = Query("newest")
 ):
     """List all applications with optional filtering."""
-    query = db.query(Application)
+    user = get_current_user(request)
+
+    # Base query filtered by user
+    query = db.query(Application).filter(Application.user_id == user.id)
 
     # Filter by status
     if status and status != "all":
@@ -54,18 +65,22 @@ async def list_applications(
 
     applications = query.all()
 
-    # Get status counts for filter badges
+    # Get status counts for filter badges (filtered by user)
     status_counts = {}
     for s in ApplicationStatus:
         count = db.query(func.count(Application.id)).filter(
+            Application.user_id == user.id,
             Application.status == s
         ).scalar()
         status_counts[s.value] = count
 
-    total_count = db.query(func.count(Application.id)).scalar()
+    total_count = db.query(func.count(Application.id)).filter(
+        Application.user_id == user.id
+    ).scalar()
 
     return templates.TemplateResponse("applications/list.html", {
         "request": request,
+        "user": user,
         "applications": applications,
         "statuses": ApplicationStatus,
         "status_counts": status_counts,
@@ -79,9 +94,15 @@ async def list_applications(
 @router.get("/new", response_class=HTMLResponse)
 async def new_application_form(request: Request, db: Session = Depends(get_db)):
     """Show form to create new application."""
-    resumes = db.query(Resume).order_by(Resume.is_default.desc()).all()
+    user = get_current_user(request)
+
+    resumes = db.query(Resume).filter(
+        Resume.user_id == user.id
+    ).order_by(Resume.is_default.desc()).all()
+
     return templates.TemplateResponse("applications/form.html", {
         "request": request,
+        "user": user,
         "application": None,
         "statuses": ApplicationStatus,
         "resumes": resumes,
@@ -106,6 +127,8 @@ async def create_application(
     resume_id: Optional[int] = Form(None)
 ):
     """Create a new application."""
+    user = get_current_user(request)
+
     try:
         status_enum = ApplicationStatus(status)
     except ValueError:
@@ -121,6 +144,7 @@ async def create_application(
         parsed_date = datetime.utcnow()
 
     application = Application(
+        user_id=user.id,  # Associate with current user
         company=company,
         job_title=job_title,
         location=location,
@@ -153,12 +177,19 @@ async def create_application(
 @router.get("/{app_id}", response_class=HTMLResponse)
 async def view_application(request: Request, app_id: int, db: Session = Depends(get_db)):
     """View a single application."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id  # Ensure user owns this application
+    ).first()
+
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
     return templates.TemplateResponse("applications/detail.html", {
         "request": request,
+        "user": user,
         "application": application,
         "statuses": ApplicationStatus
     })
@@ -167,14 +198,23 @@ async def view_application(request: Request, app_id: int, db: Session = Depends(
 @router.get("/{app_id}/edit", response_class=HTMLResponse)
 async def edit_application_form(request: Request, app_id: int, db: Session = Depends(get_db)):
     """Show form to edit application."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
+
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    resumes = db.query(Resume).order_by(Resume.is_default.desc()).all()
+    resumes = db.query(Resume).filter(
+        Resume.user_id == user.id
+    ).order_by(Resume.is_default.desc()).all()
 
     return templates.TemplateResponse("applications/form.html", {
         "request": request,
+        "user": user,
         "application": application,
         "statuses": ApplicationStatus,
         "resumes": resumes,
@@ -200,7 +240,13 @@ async def update_application(
     resume_id: Optional[int] = Form(None)
 ):
     """Update an application."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
+
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
@@ -245,12 +291,19 @@ async def update_application(
 
 @router.post("/{app_id}/status")
 async def quick_update_status(
+    request: Request,
     app_id: int,
     status: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """Quick status update (for dropdown on list view)."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
+
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
@@ -275,9 +328,15 @@ async def quick_update_status(
 
 
 @router.post("/{app_id}/delete")
-async def delete_application(app_id: int, db: Session = Depends(get_db)):
+async def delete_application(request: Request, app_id: int, db: Session = Depends(get_db)):
     """Delete an application."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
+
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
