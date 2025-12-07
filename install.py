@@ -159,7 +159,7 @@ def setup_directories():
     """Create necessary directories."""
     print_step("4", "Setting up directories...")
 
-    dirs = ["data", "data/resumes", "config"]
+    dirs = ["data", "data/resumes", "config", "app/static", "app/static/css", "app/static/js"]
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
