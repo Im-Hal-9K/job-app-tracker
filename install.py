@@ -82,24 +82,76 @@ def get_python_command():
         return str(Path("venv/Scripts/python.exe"))
     return str(Path("venv/bin/python"))
 
-def install_dependencies():
-    """Install required packages."""
-    print_step("3", "Installing dependencies (this may take a minute)...")
-    pip = get_pip_command()
+def run_with_progress(command, description):
+    """Run a command with a spinning progress indicator."""
+    import threading
+    import time
+    import itertools
+
+    spinner = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+    done = False
+
+    def spin():
+        while not done:
+            sys.stdout.write(f'\r  {next(spinner)} {description}...')
+            sys.stdout.flush()
+            time.sleep(0.1)
+
+    # Start spinner in background
+    spinner_thread = threading.Thread(target=spin)
+    spinner_thread.start()
 
     try:
-        # Upgrade pip first
-        subprocess.run([pip, "install", "--upgrade", "pip"],
-                      check=True, capture_output=True)
-
-        # Install requirements
-        subprocess.run([pip, "install", "-r", "requirements.txt"],
-                      check=True, capture_output=True)
-        print_success("Dependencies installed")
-        return True
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        done = True
+        spinner_thread.join()
+        sys.stdout.write(f'\r  {Colors.GREEN}✓{Colors.END} {description}   \n')
+        sys.stdout.flush()
+        return True, result
     except subprocess.CalledProcessError as e:
+        done = True
+        spinner_thread.join()
+        sys.stdout.write(f'\r  {Colors.RED}✗{Colors.END} {description} - Failed\n')
+        sys.stdout.flush()
+        return False, e
+
+def install_dependencies():
+    """Install required packages with progress indicators."""
+    print_step("3", "Installing dependencies...")
+    print()
+    pip = get_pip_command()
+
+    # Upgrade pip first (important for compatibility)
+    success, _ = run_with_progress(
+        [pip, "install", "--upgrade", "pip"],
+        "Upgrading pip to latest version"
+    )
+    if not success:
+        print_warning("Pip upgrade failed, continuing anyway...")
+
+    # Upgrade setuptools and wheel for better compatibility
+    success, _ = run_with_progress(
+        [pip, "install", "--upgrade", "setuptools", "wheel"],
+        "Upgrading setuptools and wheel"
+    )
+    if not success:
+        print_warning("Setuptools upgrade failed, continuing anyway...")
+
+    # Install requirements
+    success, result = run_with_progress(
+        [pip, "install", "-r", "requirements.txt"],
+        "Installing application packages"
+    )
+
+    if success:
+        print()
+        print_success("All dependencies installed successfully!")
+        return True
+    else:
+        print()
         print_error("Failed to install dependencies")
-        print(e.stderr.decode() if e.stderr else "Unknown error")
+        if hasattr(result, 'stderr') and result.stderr:
+            print(result.stderr)
         return False
 
 def setup_directories():
