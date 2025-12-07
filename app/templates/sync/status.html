@@ -171,21 +171,43 @@
 
         <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mt-4 border dark:border-gray-700">
             <h4 class="font-medium text-gray-900 dark:text-white mb-2">1. Gmail API Setup</h4>
-            <ol class="list-decimal list-inside text-gray-600 dark:text-gray-400 space-y-1 text-sm">
+            <ol class="list-decimal list-inside text-gray-600 dark:text-gray-400 space-y-2 text-sm">
                 <li>Go to <a href="https://console.cloud.google.com" target="_blank" class="text-primary hover:underline">Google Cloud Console</a></li>
-                <li>Create a new project and enable Gmail API</li>
-                <li>Create OAuth 2.0 credentials (Desktop app)</li>
-                <li>Download and save as <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">config/gmail_credentials.json</code></li>
-                <li>Run the app once to complete OAuth flow</li>
+                <li>Create a new project (or select existing)</li>
+                <li>Go to <strong>APIs & Services</strong> → <strong>Enable APIs</strong> → Search and enable <strong>Gmail API</strong></li>
+                <li>Go to <strong>APIs & Services</strong> → <strong>OAuth consent screen</strong>:
+                    <ul class="list-disc list-inside ml-4 mt-1 space-y-1">
+                        <li>Select <strong>External</strong> (for personal Gmail accounts)</li>
+                        <li>Fill in app name (e.g., "Job Tracker") and your email</li>
+                        <li>Add scopes: <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded text-xs">gmail.readonly</code></li>
+                        <li>Add your Gmail as a <strong>Test User</strong> (required while in testing mode)</li>
+                    </ul>
+                </li>
+                <li>Go to <strong>Credentials</strong> → <strong>Create Credentials</strong> → <strong>OAuth client ID</strong>:
+                    <ul class="list-disc list-inside ml-4 mt-1">
+                        <li>Application type: <strong>Desktop app</strong></li>
+                        <li>Download the JSON file</li>
+                    </ul>
+                </li>
+                <li>Save the downloaded file as <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">config/gmail_credentials.json</code></li>
+                <li>Run OAuth setup from terminal: <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">python setup_gmail.py</code></li>
+                <li>Sign in and grant access when the browser opens</li>
             </ol>
+
+            <div class="mt-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-yellow-800 dark:text-yellow-300 text-xs">
+                <strong>Note:</strong> While in "Testing" mode, only emails added as Test Users can use the app.
+                To add more users, go to OAuth consent screen → Test users → Add users.
+            </div>
         </div>
 
         <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mt-4 border dark:border-gray-700">
-            <h4 class="font-medium text-gray-900 dark:text-white mb-2">2. OpenAI API Setup</h4>
+            <h4 class="font-medium text-gray-900 dark:text-white mb-2">2. OpenAI API Setup (Optional)</h4>
+            <p class="text-gray-500 dark:text-gray-400 text-xs mb-2">Required for automatic email classification</p>
             <ol class="list-decimal list-inside text-gray-600 dark:text-gray-400 space-y-1 text-sm">
                 <li>Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" class="text-primary hover:underline">OpenAI</a></li>
-                <li>Create <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">config/.env</code> file</li>
-                <li>Add: <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">OPENAI_API_KEY=your-key-here</code></li>
+                <li>Open <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">config/.env</code></li>
+                <li>Uncomment and set: <code class="bg-gray-200 dark:bg-gray-700 px-1 rounded">OPENAI_API_KEY=sk-your-key-here</code></li>
+                <li>Restart the application</li>
             </ol>
         </div>
     </div>
