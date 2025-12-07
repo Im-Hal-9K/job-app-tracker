@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -15,6 +15,14 @@ from app.services.classifier import classifier
 router = APIRouter(prefix="/sync", tags=["sync"])
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
+
+
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
 
 
 STATUS_MAP = {
@@ -30,8 +38,11 @@ STATUS_MAP = {
 @router.get("/", response_class=HTMLResponse)
 async def sync_status(request: Request, db: Session = Depends(get_db)):
     """Show sync status and configuration."""
+    user = get_current_user(request)
+
     gmail_configured = gmail_service.is_configured()
-    openai_configured = classifier.is_configured()
+    classifier_configured = classifier.is_configured()
+    openai_configured = classifier.is_openai_configured()
 
     # Get sync stats
     total_processed = db.query(ProcessedEmail).count()
@@ -39,8 +50,10 @@ async def sync_status(request: Request, db: Session = Depends(get_db)):
 
     return templates.TemplateResponse("sync/status.html", {
         "request": request,
+        "user": user,
         "gmail_configured": gmail_configured,
         "openai_configured": openai_configured,
+        "classifier_configured": classifier_configured,
         "total_processed": total_processed,
         "job_related": job_related
     })
@@ -53,11 +66,10 @@ async def run_sync(
     hours: int = 24
 ):
     """Run email sync."""
+    user = get_current_user(request)
+
     if not gmail_service.is_configured():
         return RedirectResponse(url="/sync/?error=gmail", status_code=303)
-
-    if not classifier.is_configured():
-        return RedirectResponse(url="/sync/?error=openai", status_code=303)
 
     # Authenticate Gmail
     if not gmail_service.authenticate():
@@ -86,8 +98,13 @@ async def run_sync(
         if not content:
             continue
 
-        # Quick check if job-related
-        is_job = classifier.is_job_related(content.get('snippet', ''))
+        sender = content.get('from', '')
+        subject = content.get('subject', '')
+        snippet = content.get('snippet', '')
+        body = content.get('body', '')
+
+        # Quick check if job-related (uses keyword classifier, falls back to OpenAI if needed)
+        is_job = classifier.is_job_related(sender=sender, subject=subject, snippet=snippet)
 
         # Record as processed
         processed = ProcessedEmail(
@@ -99,9 +116,8 @@ async def run_sync(
         if not is_job:
             continue
 
-        # Full classification
-        full_content = f"From: {content.get('from', '')}\nSubject: {content.get('subject', '')}\n\n{content.get('body', '')}"
-        details = classifier.classify_email(full_content)
+        # Full classification (uses keyword classifier with OpenAI fallback)
+        details = classifier.classify_email(sender=sender, subject=subject, body=body)
 
         if not details:
             continue
@@ -110,13 +126,14 @@ async def run_sync(
         status_str = details.get('status', 'applied').lower()
         status = STATUS_MAP.get(status_str, ApplicationStatus.APPLIED)
 
-        # Check for existing application by thread
+        # Check for existing application by thread (for this user)
         thread_id = content.get('thread_id')
         existing_app = None
 
         if thread_id:
             existing_app = db.query(Application).filter(
-                Application.email_thread_id == thread_id
+                Application.email_thread_id == thread_id,
+                Application.user_id == user.id
             ).first()
 
         if existing_app:
@@ -137,8 +154,9 @@ async def run_sync(
 
                 logger.info(f"Updated {existing_app.company}: {old_status.value} -> {status.value}")
         else:
-            # Create new application
+            # Create new application for this user
             app = Application(
+                user_id=user.id,
                 company=details.get('company', 'Unknown'),
                 job_title=details.get('job_title', 'Unknown'),
                 location=details.get('location', 'Unknown'),
