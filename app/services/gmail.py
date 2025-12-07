@@ -19,12 +19,17 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 TOKEN_PATH = os.getenv('GMAIL_TOKEN_PATH', 'config/token.json')
 CREDS_PATH = os.getenv('GMAIL_CREDS_PATH', 'config/gmail_credentials.json')
 
+# Labels to scan - comma-separated list, defaults to INBOX
+# Can include: INBOX, STARRED, SENT, or custom labels like "Jobs", "Applications"
+GMAIL_LABELS = os.getenv('GMAIL_LABELS', 'INBOX')
+
 
 class GmailService:
     """Gmail API service wrapper."""
 
     def __init__(self):
         self.service = None
+        self._labels_cache = None
 
     def authenticate(self) -> bool:
         """
@@ -73,13 +78,58 @@ class GmailService:
         """Check if Gmail credentials are configured."""
         return os.path.exists(TOKEN_PATH) or os.path.exists(CREDS_PATH)
 
-    def fetch_messages(self, since_hours: int = 24, max_results: int = 100) -> list[dict[str, Any]]:
+    def get_labels(self) -> list[dict[str, str]]:
         """
-        Fetch messages from inbox.
+        Get all available Gmail labels.
+
+        Returns:
+            List of label objects with 'id' and 'name'.
+        """
+        if self._labels_cache:
+            return self._labels_cache
+
+        if not self.service:
+            if not self.authenticate():
+                return []
+
+        try:
+            response = self.service.users().labels().list(userId='me').execute()
+            labels = response.get('labels', [])
+            self._labels_cache = [{'id': l['id'], 'name': l['name']} for l in labels]
+            return self._labels_cache
+        except HttpError as e:
+            logger.error(f"Failed to get labels: {e}")
+            return []
+
+    def get_label_id(self, label_name: str) -> Optional[str]:
+        """
+        Get label ID by name.
+
+        Args:
+            label_name: The label name (e.g., "Jobs", "INBOX")
+
+        Returns:
+            The label ID, or None if not found.
+        """
+        labels = self.get_labels()
+        for label in labels:
+            if label['name'].lower() == label_name.lower():
+                return label['id']
+        return None
+
+    def fetch_messages(
+        self,
+        since_hours: int = 24,
+        max_results: int = 100,
+        labels: Optional[list[str]] = None
+    ) -> list[dict[str, Any]]:
+        """
+        Fetch messages from specified labels.
 
         Args:
             since_hours: Only fetch emails from the last N hours.
             max_results: Maximum number of messages to return.
+            labels: List of label names to scan. Defaults to GMAIL_LABELS env var.
 
         Returns:
             List of message objects with 'id' and 'threadId'.
@@ -88,24 +138,50 @@ class GmailService:
             if not self.authenticate():
                 return []
 
+        # Use provided labels or fall back to env config
+        if labels is None:
+            labels = [l.strip() for l in GMAIL_LABELS.split(',') if l.strip()]
+
         time_threshold = (datetime.now() - timedelta(hours=since_hours)).strftime('%Y/%m/%d')
         query = f"after:{time_threshold}"
 
-        try:
-            response = self.service.users().messages().list(
-                userId='me',
-                labelIds=['INBOX'],
-                q=query,
-                maxResults=max_results
-            ).execute()
+        all_messages = []
+        seen_ids = set()
 
-            messages = response.get('messages', [])
-            logger.info(f"Fetched {len(messages)} messages from Gmail")
-            return messages
+        # Fetch from each label
+        for label_name in labels:
+            # Convert label name to ID (for custom labels)
+            if label_name.upper() in ['INBOX', 'SENT', 'SPAM', 'TRASH', 'DRAFT', 'STARRED', 'UNREAD', 'IMPORTANT']:
+                label_ids = [label_name.upper()]
+            else:
+                label_id = self.get_label_id(label_name)
+                if not label_id:
+                    logger.warning(f"Label not found: {label_name}")
+                    continue
+                label_ids = [label_id]
 
-        except HttpError as e:
-            logger.error(f"Gmail API error: {e}")
-            return []
+            try:
+                logger.info(f"Fetching from label: {label_name}")
+                response = self.service.users().messages().list(
+                    userId='me',
+                    labelIds=label_ids,
+                    q=query,
+                    maxResults=max_results
+                ).execute()
+
+                messages = response.get('messages', [])
+                for msg in messages:
+                    if msg['id'] not in seen_ids:
+                        seen_ids.add(msg['id'])
+                        all_messages.append(msg)
+
+                logger.info(f"Fetched {len(messages)} messages from {label_name}")
+
+            except HttpError as e:
+                logger.error(f"Gmail API error for label {label_name}: {e}")
+
+        logger.info(f"Total unique messages fetched: {len(all_messages)}")
+        return all_messages
 
     def get_message_content(self, message_id: str) -> dict[str, Any]:
         """
@@ -141,6 +217,9 @@ class GmailService:
             internal_date = int(message.get('internalDate', 0)) / 1000
             email_date = datetime.fromtimestamp(internal_date) if internal_date else None
 
+            # Get labels for this message
+            label_ids = message.get('labelIds', [])
+
             return {
                 'id': message_id,
                 'thread_id': message.get('threadId', ''),
@@ -148,7 +227,8 @@ class GmailService:
                 'subject': subject,
                 'from': from_addr,
                 'body': body[:4000] if body else '',  # Truncate for API limits
-                'date': email_date
+                'date': email_date,
+                'labels': label_ids
             }
 
         except HttpError as e:

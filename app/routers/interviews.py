@@ -15,23 +15,35 @@ router = APIRouter(prefix="/interviews", tags=["interviews"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_interviews(request: Request, db: Session = Depends(get_db)):
     """List all upcoming interviews."""
+    user = get_current_user(request)
     now = datetime.utcnow()
 
-    # Upcoming interviews
-    upcoming = db.query(Interview).filter(
+    # Upcoming interviews for this user's applications
+    upcoming = db.query(Interview).join(Application).filter(
+        Application.user_id == user.id,
         Interview.scheduled_at >= now
     ).order_by(Interview.scheduled_at.asc()).all()
 
     # Past interviews
-    past = db.query(Interview).filter(
+    past = db.query(Interview).join(Application).filter(
+        Application.user_id == user.id,
         Interview.scheduled_at < now
     ).order_by(Interview.scheduled_at.desc()).limit(10).all()
 
     return templates.TemplateResponse("interviews/list.html", {
         "request": request,
+        "user": user,
         "upcoming": upcoming,
         "past": past,
         "interview_types": InterviewType
@@ -41,12 +53,18 @@ async def list_interviews(request: Request, db: Session = Depends(get_db)):
 @router.get("/new/{app_id}", response_class=HTMLResponse)
 async def new_interview_form(request: Request, app_id: int, db: Session = Depends(get_db)):
     """Show form to schedule new interview."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
     return templates.TemplateResponse("interviews/form.html", {
         "request": request,
+        "user": user,
         "application": application,
         "interview": None,
         "interview_types": InterviewType,
@@ -69,7 +87,12 @@ async def create_interview(
     add_to_calendar: bool = Form(False)
 ):
     """Create a new interview."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
@@ -127,12 +150,18 @@ async def create_interview(
 @router.get("/{interview_id}/edit", response_class=HTMLResponse)
 async def edit_interview_form(request: Request, interview_id: int, db: Session = Depends(get_db)):
     """Show form to edit interview."""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    user = get_current_user(request)
+
+    interview = db.query(Interview).join(Application).filter(
+        Interview.id == interview_id,
+        Application.user_id == user.id
+    ).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 
     return templates.TemplateResponse("interviews/form.html", {
         "request": request,
+        "user": user,
         "application": interview.application,
         "interview": interview,
         "interview_types": InterviewType,
@@ -156,7 +185,12 @@ async def update_interview(
     update_calendar: bool = Form(False)
 ):
     """Update an interview."""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    user = get_current_user(request)
+
+    interview = db.query(Interview).join(Application).filter(
+        Interview.id == interview_id,
+        Application.user_id == user.id
+    ).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 
@@ -196,9 +230,14 @@ async def update_interview(
 
 
 @router.post("/{interview_id}/delete")
-async def delete_interview(interview_id: int, db: Session = Depends(get_db)):
+async def delete_interview(request: Request, interview_id: int, db: Session = Depends(get_db)):
     """Delete an interview."""
-    interview = db.query(Interview).filter(Interview.id == interview_id).first()
+    user = get_current_user(request)
+
+    interview = db.query(Interview).join(Application).filter(
+        Interview.id == interview_id,
+        Application.user_id == user.id
+    ).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
 

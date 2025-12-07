@@ -2,7 +2,7 @@
 
 import io
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -17,16 +17,29 @@ router = APIRouter(prefix="/export", tags=["export"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def export_page(request: Request, db: Session = Depends(get_db)):
     """Show export and reporting page."""
-    # Get summary stats
-    total = db.query(func.count(Application.id)).scalar()
+    user = get_current_user(request)
+
+    # Get summary stats for this user
+    total = db.query(func.count(Application.id)).filter(
+        Application.user_id == user.id
+    ).scalar()
 
     # Status breakdown
     status_counts = {}
     for status in ApplicationStatus:
         count = db.query(func.count(Application.id)).filter(
+            Application.user_id == user.id,
             Application.status == status
         ).scalar()
         status_counts[status.value] = count
@@ -42,6 +55,7 @@ async def export_page(request: Request, db: Session = Depends(get_db)):
             next_month = datetime.utcnow() + timedelta(days=1)
 
         count = db.query(func.count(Application.id)).filter(
+            Application.user_id == user.id,
             Application.applied_date >= month_start,
             Application.applied_date < next_month
         ).scalar()
@@ -66,12 +80,15 @@ async def export_page(request: Request, db: Session = Depends(get_db)):
     top_companies = db.query(
         Application.company,
         func.count(Application.id).label('count')
+    ).filter(
+        Application.user_id == user.id
     ).group_by(Application.company).order_by(
         func.count(Application.id).desc()
     ).limit(10).all()
 
     return templates.TemplateResponse("export/index.html", {
         "request": request,
+        "user": user,
         "total": total,
         "status_counts": status_counts,
         "monthly_data": monthly_data,
@@ -83,9 +100,13 @@ async def export_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/excel")
-async def export_excel(db: Session = Depends(get_db)):
+async def export_excel(request: Request, db: Session = Depends(get_db)):
     """Export all applications to Excel."""
-    applications = db.query(Application).order_by(Application.applied_date.desc()).all()
+    user = get_current_user(request)
+
+    applications = db.query(Application).filter(
+        Application.user_id == user.id
+    ).order_by(Application.applied_date.desc()).all()
 
     data = []
     for app in applications:
@@ -130,9 +151,13 @@ async def export_excel(db: Session = Depends(get_db)):
 
 
 @router.get("/csv")
-async def export_csv(db: Session = Depends(get_db)):
+async def export_csv(request: Request, db: Session = Depends(get_db)):
     """Export all applications to CSV."""
-    applications = db.query(Application).order_by(Application.applied_date.desc()).all()
+    user = get_current_user(request)
+
+    applications = db.query(Application).filter(
+        Application.user_id == user.id
+    ).order_by(Application.applied_date.desc()).all()
 
     data = []
     for app in applications:
@@ -165,9 +190,13 @@ async def export_csv(db: Session = Depends(get_db)):
 
 
 @router.get("/interviews/csv")
-async def export_interviews_csv(db: Session = Depends(get_db)):
+async def export_interviews_csv(request: Request, db: Session = Depends(get_db)):
     """Export all interviews to CSV."""
-    interviews = db.query(Interview).order_by(Interview.scheduled_at.desc()).all()
+    user = get_current_user(request)
+
+    interviews = db.query(Interview).join(Application).filter(
+        Application.user_id == user.id
+    ).order_by(Interview.scheduled_at.desc()).all()
 
     data = []
     for interview in interviews:

@@ -14,30 +14,43 @@ router = APIRouter(prefix="/followups", tags=["followups"])
 templates = Jinja2Templates(directory="app/templates")
 
 
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_followups(request: Request, db: Session = Depends(get_db)):
     """List all follow-ups."""
+    user = get_current_user(request)
     now = datetime.utcnow()
 
-    # Pending follow-ups
-    pending = db.query(FollowUp).filter(
+    # Pending follow-ups for this user's applications
+    pending = db.query(FollowUp).join(Application).filter(
+        Application.user_id == user.id,
         FollowUp.is_completed == False,
         FollowUp.scheduled_date >= now
     ).order_by(FollowUp.scheduled_date.asc()).all()
 
     # Overdue follow-ups
-    overdue = db.query(FollowUp).filter(
+    overdue = db.query(FollowUp).join(Application).filter(
+        Application.user_id == user.id,
         FollowUp.is_completed == False,
         FollowUp.scheduled_date < now
     ).order_by(FollowUp.scheduled_date.desc()).all()
 
     # Completed follow-ups (recent)
-    completed = db.query(FollowUp).filter(
+    completed = db.query(FollowUp).join(Application).filter(
+        Application.user_id == user.id,
         FollowUp.is_completed == True
     ).order_by(FollowUp.completed_at.desc()).limit(10).all()
 
     return templates.TemplateResponse("followups/list.html", {
         "request": request,
+        "user": user,
         "pending": pending,
         "overdue": overdue,
         "completed": completed,
@@ -48,12 +61,18 @@ async def list_followups(request: Request, db: Session = Depends(get_db)):
 @router.get("/new/{app_id}", response_class=HTMLResponse)
 async def new_followup_form(request: Request, app_id: int, db: Session = Depends(get_db)):
     """Show form to schedule new follow-up."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
     return templates.TemplateResponse("followups/form.html", {
         "request": request,
+        "user": user,
         "application": application,
         "followup": None,
         "follow_up_types": FollowUpType,
@@ -74,7 +93,12 @@ async def create_followup(
     add_to_calendar: bool = Form(False)
 ):
     """Create a new follow-up."""
-    application = db.query(Application).filter(Application.id == app_id).first()
+    user = get_current_user(request)
+
+    application = db.query(Application).filter(
+        Application.id == app_id,
+        Application.user_id == user.id
+    ).first()
     if not application:
         raise HTTPException(status_code=404, detail="Application not found")
 
@@ -129,9 +153,14 @@ async def create_followup(
 
 
 @router.post("/{followup_id}/complete")
-async def mark_complete(followup_id: int, db: Session = Depends(get_db)):
+async def mark_complete(request: Request, followup_id: int, db: Session = Depends(get_db)):
     """Mark a follow-up as completed."""
-    followup = db.query(FollowUp).filter(FollowUp.id == followup_id).first()
+    user = get_current_user(request)
+
+    followup = db.query(FollowUp).join(Application).filter(
+        FollowUp.id == followup_id,
+        Application.user_id == user.id
+    ).first()
     if not followup:
         raise HTTPException(status_code=404, detail="Follow-up not found")
 
@@ -143,9 +172,14 @@ async def mark_complete(followup_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{followup_id}/delete")
-async def delete_followup(followup_id: int, db: Session = Depends(get_db)):
+async def delete_followup(request: Request, followup_id: int, db: Session = Depends(get_db)):
     """Delete a follow-up."""
-    followup = db.query(FollowUp).filter(FollowUp.id == followup_id).first()
+    user = get_current_user(request)
+
+    followup = db.query(FollowUp).join(Application).filter(
+        FollowUp.id == followup_id,
+        Application.user_id == user.id
+    ).first()
     if not followup:
         raise HTTPException(status_code=404, detail="Follow-up not found")
 

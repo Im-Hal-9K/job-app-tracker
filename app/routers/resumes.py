@@ -21,19 +21,35 @@ RESUME_DIR = "data/resumes"
 os.makedirs(RESUME_DIR, exist_ok=True)
 
 
+def get_current_user(request: Request):
+    """Get current user from request state."""
+    user = getattr(request.state, 'user', None)
+    if not user:
+        raise HTTPException(status_code=303, headers={"Location": "/auth/login"})
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def list_resumes(request: Request, db: Session = Depends(get_db)):
     """List all resumes."""
-    resumes = db.query(Resume).order_by(Resume.is_default.desc(), Resume.created_at.desc()).all()
+    user = get_current_user(request)
+
+    resumes = db.query(Resume).filter(
+        Resume.user_id == user.id
+    ).order_by(Resume.is_default.desc(), Resume.created_at.desc()).all()
 
     # Count applications per resume
     resume_counts = {}
     for resume in resumes:
-        count = db.query(Application).filter(Application.resume_id == resume.id).count()
+        count = db.query(Application).filter(
+            Application.resume_id == resume.id,
+            Application.user_id == user.id
+        ).count()
         resume_counts[resume.id] = count
 
     return templates.TemplateResponse("resumes/list.html", {
         "request": request,
+        "user": user,
         "resumes": resumes,
         "resume_counts": resume_counts
     })
@@ -42,8 +58,10 @@ async def list_resumes(request: Request, db: Session = Depends(get_db)):
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_form(request: Request):
     """Show upload form."""
+    user = get_current_user(request)
     return templates.TemplateResponse("resumes/upload.html", {
-        "request": request
+        "request": request,
+        "user": user
     })
 
 
@@ -56,6 +74,8 @@ async def upload_resume(
     is_default: bool = Form(False)
 ):
     """Upload a new resume."""
+    user = get_current_user(request)
+
     # Validate file type
     allowed_extensions = {'.pdf', '.doc', '.docx'}
     file_ext = os.path.splitext(file.filename)[1].lower()
@@ -65,22 +85,26 @@ async def upload_resume(
             detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
         )
 
-    # Generate unique filename
+    # Generate unique filename with user id for isolation
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     safe_name = "".join(c for c in name if c.isalnum() or c in (' ', '-', '_')).strip()
-    filename = f"{timestamp}_{safe_name}{file_ext}"
+    filename = f"u{user.id}_{timestamp}_{safe_name}{file_ext}"
     file_path = os.path.join(RESUME_DIR, filename)
 
     # Save file
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # If this is default, unset other defaults
+    # If this is default, unset other defaults for this user only
     if is_default:
-        db.query(Resume).filter(Resume.is_default == True).update({"is_default": False})
+        db.query(Resume).filter(
+            Resume.user_id == user.id,
+            Resume.is_default == True
+        ).update({"is_default": False})
 
     # Create database record
     resume = Resume(
+        user_id=user.id,
         name=name,
         filename=file.filename,
         file_path=file_path,
@@ -93,9 +117,14 @@ async def upload_resume(
 
 
 @router.get("/{resume_id}/download")
-async def download_resume(resume_id: int, db: Session = Depends(get_db)):
+async def download_resume(request: Request, resume_id: int, db: Session = Depends(get_db)):
     """Download a resume file."""
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    user = get_current_user(request)
+
+    resume = db.query(Resume).filter(
+        Resume.id == resume_id,
+        Resume.user_id == user.id
+    ).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -110,14 +139,22 @@ async def download_resume(resume_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{resume_id}/default")
-async def set_default(resume_id: int, db: Session = Depends(get_db)):
+async def set_default(request: Request, resume_id: int, db: Session = Depends(get_db)):
     """Set a resume as default."""
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    user = get_current_user(request)
+
+    resume = db.query(Resume).filter(
+        Resume.id == resume_id,
+        Resume.user_id == user.id
+    ).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
-    # Unset other defaults
-    db.query(Resume).filter(Resume.is_default == True).update({"is_default": False})
+    # Unset other defaults for this user
+    db.query(Resume).filter(
+        Resume.user_id == user.id,
+        Resume.is_default == True
+    ).update({"is_default": False})
 
     # Set this one as default
     resume.is_default = True
@@ -127,9 +164,14 @@ async def set_default(resume_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{resume_id}/delete")
-async def delete_resume(resume_id: int, db: Session = Depends(get_db)):
+async def delete_resume(request: Request, resume_id: int, db: Session = Depends(get_db)):
     """Delete a resume."""
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    user = get_current_user(request)
+
+    resume = db.query(Resume).filter(
+        Resume.id == resume_id,
+        Resume.user_id == user.id
+    ).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
 
@@ -137,8 +179,11 @@ async def delete_resume(resume_id: int, db: Session = Depends(get_db)):
     if os.path.exists(resume.file_path):
         os.remove(resume.file_path)
 
-    # Clear resume from applications
-    db.query(Application).filter(Application.resume_id == resume_id).update({"resume_id": None})
+    # Clear resume from user's applications only
+    db.query(Application).filter(
+        Application.resume_id == resume_id,
+        Application.user_id == user.id
+    ).update({"resume_id": None})
 
     # Delete record
     db.delete(resume)
