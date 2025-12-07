@@ -226,9 +226,38 @@ pause
     print_success("Created start.sh (Mac/Linux) and start.bat (Windows)")
     return True
 
+def get_local_ip():
+    """Get the local IP address for network access."""
+    import socket
+    try:
+        # Connect to an external address to determine local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return None
+
 def print_next_steps():
     """Print instructions for the user."""
     python_cmd = get_python_command()
+    local_ip = get_local_ip()
+
+    # Build the phone access section
+    if local_ip:
+        phone_section = f"""
+{Colors.BOLD}Access from your phone:{Colors.END}
+
+  Open {Colors.BLUE}http://{local_ip}:8000{Colors.END} on your phone
+  (Make sure you're on the same WiFi network)"""
+    else:
+        phone_section = f"""
+{Colors.BOLD}Access from your phone:{Colors.END}
+
+  Find your computer's IP address and open:
+  http://YOUR_IP:8000 on your phone's browser
+  (Make sure you're on the same WiFi network)"""
 
     print(f"""
 {Colors.GREEN}{Colors.BOLD}Installation Complete!{Colors.END}
@@ -241,7 +270,7 @@ def print_next_steps():
 
   Or manually: {python_cmd} -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-{Colors.BOLD}Then open:{Colors.END} http://localhost:8000
+{Colors.BOLD}Then open:{Colors.END} {Colors.BLUE}http://localhost:8000{Colors.END}
 
 {Colors.BOLD}Optional Setup:{Colors.END}
 
@@ -250,12 +279,7 @@ def print_next_steps():
 
   2. AI Classification: Add your OpenAI API key to config/.env
      - Get a key at https://platform.openai.com/api-keys
-
-{Colors.BOLD}Access from your phone:{Colors.END}
-
-  Find your computer's IP address and open:
-  http://YOUR_IP:8000 on your phone's browser
-  (Make sure you're on the same WiFi network)
+{phone_section}
 
 {Colors.YELLOW}Need help?{Colors.END} Visit the Email Sync page for setup guides.
 """)
